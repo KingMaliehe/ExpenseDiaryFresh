@@ -2,7 +2,7 @@
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { format } from "date-fns";
 import { router } from "expo-router";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   Alert,
   KeyboardAvoidingView,
@@ -24,6 +24,7 @@ import { Category } from "../../src/types/database";
 export default function AddScreen() {
   const { user } = useAuthStore();
   const { addTransaction } = useTransactionStore();
+  const scrollRef = useRef<ScrollView>(null);
   const [type, setType] = useState<"expense" | "income">("expense");
   const [description, setDescription] = useState("");
   const [amount, setAmount] = useState("");
@@ -76,6 +77,13 @@ export default function AddScreen() {
   };
   const cancelIOSDate = () => setShowPicker(false);
 
+  // When notes is focused, scroll down so keyboard doesn't cover it
+  const handleNotesFocus = () => {
+    setTimeout(() => {
+      scrollRef.current?.scrollToEnd({ animated: true });
+    }, 300);
+  };
+
   const handleSave = async () => {
     if (!description.trim()) {
       Alert.alert("Missing description", "Please enter a description.");
@@ -121,11 +129,14 @@ export default function AddScreen() {
   return (
     <KeyboardAvoidingView
       style={styles.container}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
     >
       <ScrollView
+        ref={scrollRef}
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
       >
         {/* Header */}
         <View style={styles.header}>
@@ -181,7 +192,7 @@ export default function AddScreen() {
         <View style={styles.fieldGroup}>
           <Text style={styles.label}>Description</Text>
           <TextInput
-            style={[styles.input, { color: Colors.text }]}
+            style={styles.input}
             value={description}
             onChangeText={setDescription}
             placeholder="e.g. Woolworths groceries"
@@ -268,17 +279,18 @@ export default function AddScreen() {
           </Modal>
         )}
 
-        {/* Notes */}
+        {/* Notes — scrolls into view when keyboard opens */}
         <View style={styles.fieldGroup}>
           <Text style={styles.label}>Notes (optional)</Text>
           <TextInput
-            style={[styles.input, styles.notesInput]}
+            style={styles.notesInput}
             value={notes}
             onChangeText={setNotes}
+            onFocus={handleNotesFocus}
             placeholder="Any extra details…"
             placeholderTextColor={Colors.subtle}
             multiline
-            numberOfLines={3}
+            numberOfLines={4}
             textAlignVertical="top"
           />
         </View>
@@ -293,6 +305,9 @@ export default function AddScreen() {
             {saving ? "Saving…" : "Save entry"}
           </Text>
         </TouchableOpacity>
+
+        {/* Extra space at bottom so save button is never hidden by keyboard */}
+        <View style={{ height: 40 }} />
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -305,7 +320,7 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: Spacing.xl,
-    paddingBottom: 60,
+    paddingBottom: 80,
   },
   header: {
     marginBottom: Spacing.xl,
@@ -329,12 +344,8 @@ const styles = StyleSheet.create({
     padding: 12,
     alignItems: "center",
   },
-  typeBtnExpense: {
-    backgroundColor: "rgba(248,81,73,0.15)",
-  },
-  typeBtnIncome: {
-    backgroundColor: "rgba(63,185,80,0.15)",
-  },
+  typeBtnExpense: { backgroundColor: "rgba(248,81,73,0.15)" },
+  typeBtnIncome: { backgroundColor: "rgba(63,185,80,0.15)" },
   typeBtnText: {
     fontSize: Typography.base,
     fontWeight: Typography.medium,
@@ -385,10 +396,17 @@ const styles = StyleSheet.create({
     fontSize: Typography.md,
     color: Colors.text,
   },
+  // Notes input — separate style so color is guaranteed
   notesInput: {
-    height: 90,
-    textAlignVertical: "top",
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: Radius.sm,
+    padding: Spacing.md,
+    fontSize: Typography.md,
     color: Colors.text,
+    height: 110,
+    textAlignVertical: "top",
   },
   catGrid: {
     flexDirection: "row",
@@ -456,10 +474,7 @@ const styles = StyleSheet.create({
     fontWeight: Typography.semibold,
     color: Colors.text,
   },
-  modalCancel: {
-    fontSize: Typography.base,
-    color: Colors.muted,
-  },
+  modalCancel: { fontSize: Typography.base, color: Colors.muted },
   modalConfirm: {
     fontSize: Typography.base,
     color: Colors.accent,
