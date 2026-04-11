@@ -34,10 +34,7 @@ export default function AddScreen() {
   const [notes, setNotes] = useState("");
   const [categories, setCategories] = useState<Category[]>([]);
   const [saving, setSaving] = useState(false);
-
-  // Date picker state
   const [showPicker, setShowPicker] = useState(false);
-  // On Android the picker shows inline, on iOS we wrap it in a modal
   const [tempDate, setTempDate] = useState(new Date());
 
   useEffect(() => {
@@ -67,9 +64,7 @@ export default function AddScreen() {
   const onDateChange = (event: any, date?: Date) => {
     if (Platform.OS === "android") {
       setShowPicker(false);
-      if (event.type === "set" && date) {
-        setSelectedDate(date);
-      }
+      if (event.type === "set" && date) setSelectedDate(date);
     } else {
       if (date) setTempDate(date);
     }
@@ -79,23 +74,23 @@ export default function AddScreen() {
     setSelectedDate(tempDate);
     setShowPicker(false);
   };
-
-  const cancelIOSDate = () => {
-    setShowPicker(false);
-  };
+  const cancelIOSDate = () => setShowPicker(false);
 
   const handleSave = async () => {
     if (!description.trim()) {
-      Alert.alert("Error", "Please enter a description.");
+      Alert.alert("Missing description", "Please enter a description.");
       return;
     }
     const parsedAmount = parseFloat(amount.replace(",", "."));
     if (!parsedAmount || parsedAmount <= 0) {
-      Alert.alert("Error", "Please enter a valid amount.");
+      Alert.alert(
+        "Invalid amount",
+        "Please enter a valid amount greater than 0.",
+      );
       return;
     }
     if (!selectedCategory) {
-      Alert.alert("Error", "Please select a category.");
+      Alert.alert("No category", "Please select a category.");
       return;
     }
 
@@ -117,7 +112,7 @@ export default function AddScreen() {
       setSelectedDate(new Date());
       router.push("/(tabs)/dashboard");
     } catch (e: any) {
-      Alert.alert("Error", e.message);
+      Alert.alert("Error saving", e.message);
     } finally {
       setSaving(false);
     }
@@ -186,7 +181,7 @@ export default function AddScreen() {
         <View style={styles.fieldGroup}>
           <Text style={styles.label}>Description</Text>
           <TextInput
-            style={styles.input}
+            style={[styles.input, { color: Colors.text }]}
             value={description}
             onChangeText={setDescription}
             placeholder="e.g. Woolworths groceries"
@@ -194,7 +189,7 @@ export default function AddScreen() {
           />
         </View>
 
-        {/* Category grid */}
+        {/* Categories */}
         <View style={styles.fieldGroup}>
           <Text style={styles.label}>Category</Text>
           <View style={styles.catGrid}>
@@ -224,7 +219,7 @@ export default function AddScreen() {
           </View>
         </View>
 
-        {/* Date picker button */}
+        {/* Date picker */}
         <View style={styles.fieldGroup}>
           <Text style={styles.label}>Date</Text>
           <TouchableOpacity style={styles.datePicker} onPress={openDatePicker}>
@@ -234,7 +229,7 @@ export default function AddScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Android date picker - shows inline */}
+        {/* Android native calendar dialog */}
         {Platform.OS === "android" && showPicker && (
           <DateTimePicker
             value={selectedDate}
@@ -245,7 +240,7 @@ export default function AddScreen() {
           />
         )}
 
-        {/* iOS date picker - shows in modal */}
+        {/* iOS bottom sheet date picker */}
         {Platform.OS === "ios" && (
           <Modal visible={showPicker} transparent animationType="slide">
             <View style={styles.modalOverlay}>
@@ -284,10 +279,11 @@ export default function AddScreen() {
             placeholderTextColor={Colors.subtle}
             multiline
             numberOfLines={3}
+            textAlignVertical="top"
           />
         </View>
 
-        {/* Save */}
+        {/* Save button */}
         <TouchableOpacity
           style={[styles.saveBtn, saving && styles.saveBtnDisabled]}
           onPress={handleSave}
@@ -303,9 +299,17 @@ export default function AddScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.bg },
-  content: { padding: Spacing.xl, paddingBottom: 40 },
-  header: { marginBottom: Spacing.xl },
+  container: {
+    flex: 1,
+    backgroundColor: Colors.bg,
+  },
+  content: {
+    padding: Spacing.xl,
+    paddingBottom: 60,
+  },
+  header: {
+    marginBottom: Spacing.xl,
+  },
   title: {
     fontSize: Typography.xxl,
     fontWeight: Typography.bold,
@@ -320,9 +324,17 @@ const styles = StyleSheet.create({
     overflow: "hidden",
     marginBottom: Spacing.xl,
   },
-  typeBtn: { flex: 1, padding: 12, alignItems: "center" },
-  typeBtnExpense: { backgroundColor: "rgba(248,81,73,0.15)" },
-  typeBtnIncome: { backgroundColor: "rgba(63,185,80,0.15)" },
+  typeBtn: {
+    flex: 1,
+    padding: 12,
+    alignItems: "center",
+  },
+  typeBtnExpense: {
+    backgroundColor: "rgba(248,81,73,0.15)",
+  },
+  typeBtnIncome: {
+    backgroundColor: "rgba(63,185,80,0.15)",
+  },
   typeBtnText: {
     fontSize: Typography.base,
     fontWeight: Typography.medium,
@@ -353,7 +365,9 @@ const styles = StyleSheet.create({
     color: Colors.text,
     minWidth: 120,
   },
-  fieldGroup: { marginBottom: Spacing.lg },
+  fieldGroup: {
+    marginBottom: Spacing.lg,
+  },
   label: {
     fontSize: Typography.xs,
     fontWeight: Typography.medium,
@@ -371,8 +385,16 @@ const styles = StyleSheet.create({
     fontSize: Typography.md,
     color: Colors.text,
   },
-  notesInput: { height: 80, textAlignVertical: "top" },
-  catGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  notesInput: {
+    height: 90,
+    textAlignVertical: "top",
+    color: Colors.text,
+  },
+  catGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
   catChip: {
     flexDirection: "row",
     alignItems: "center",
@@ -390,8 +412,6 @@ const styles = StyleSheet.create({
     color: Colors.muted,
     fontWeight: Typography.medium,
   },
-
-  // Date picker button
   datePicker: {
     flexDirection: "row",
     alignItems: "center",
@@ -410,8 +430,6 @@ const styles = StyleSheet.create({
     fontWeight: Typography.medium,
   },
   dateChevron: { fontSize: 20, color: Colors.muted },
-
-  // iOS modal
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.6)",
@@ -438,13 +456,15 @@ const styles = StyleSheet.create({
     fontWeight: Typography.semibold,
     color: Colors.text,
   },
-  modalCancel: { fontSize: Typography.base, color: Colors.muted },
+  modalCancel: {
+    fontSize: Typography.base,
+    color: Colors.muted,
+  },
   modalConfirm: {
     fontSize: Typography.base,
     color: Colors.accent,
     fontWeight: Typography.semibold,
   },
-
   saveBtn: {
     backgroundColor: Colors.accent,
     borderRadius: Radius.sm,
