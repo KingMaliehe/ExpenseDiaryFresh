@@ -1,15 +1,16 @@
 // app/reset-password.tsx
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import React, { useEffect, useState } from "react";
 import {
-    Alert,
-    KeyboardAvoidingView,
-    Platform,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import { supabase } from "../src/services/supabase";
 import { Colors, Radius, Spacing, Typography } from "../src/theme";
@@ -18,21 +19,64 @@ export default function ResetPasswordScreen() {
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [loading, setLoading] = useState(false);
+  const [verifying, setVerifying] = useState(true);
   const [ready, setReady] = useState(false);
+  const [errorMsg, setErrorMsg] = useState("");
+
+  const params = useLocalSearchParams();
 
   useEffect(() => {
-    // Supabase automatically picks up the token from the deep link
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((event) => {
-      if (event === "PASSWORD_RECOVERY") {
-        setReady(true);
-      }
-    });
-    return () => subscription.unsubscribe();
+    handleDeepLink();
   }, []);
 
-  const handleReset = async () => {
+  const handleDeepLink = async (): Promise<void> => {
+    try {
+      const tokenHash = params.token_hash as string | undefined;
+      const type = params.type as string | undefined;
+
+      if (tokenHash && type === "recovery") {
+        const { error } = await supabase.auth.verifyOtp({
+          token_hash: tokenHash,
+          type: "recovery",
+        });
+        if (error) {
+          setErrorMsg(
+            "This reset link has expired or is invalid. Please request a new one.",
+          );
+        } else {
+          setReady(true);
+        }
+        setVerifying(false);
+      } else {
+        // Fallback: listen for PASSWORD_RECOVERY auth event
+        const {
+          data: { subscription },
+        } = supabase.auth.onAuthStateChange((event) => {
+          if (event === "PASSWORD_RECOVERY") {
+            setReady(true);
+            setVerifying(false);
+            subscription.unsubscribe();
+          }
+        });
+
+        // Timeout after 6 seconds
+        setTimeout(() => {
+          setVerifying(false);
+          if (!ready) {
+            setErrorMsg(
+              "Could not verify reset link. Please request a new password reset.",
+            );
+          }
+          subscription.unsubscribe();
+        }, 6000);
+      }
+    } catch (e: any) {
+      setErrorMsg("Something went wrong. Please try again.");
+      setVerifying(false);
+    }
+  };
+
+  const handleReset = async (): Promise<void> => {
     if (!password) {
       Alert.alert("Error", "Please enter a new password.");
       return;
@@ -51,9 +95,9 @@ export default function ResetPasswordScreen() {
       const { error } = await supabase.auth.updateUser({ password });
       if (error) throw error;
       Alert.alert(
-        "Password updated",
+        "Password updated ✓",
         "Your password has been changed successfully.",
-        [{ text: "OK", onPress: () => router.replace("/(auth)/login") }],
+        [{ text: "Sign in", onPress: () => router.replace("/(auth)/login") }],
       );
     } catch (e: any) {
       Alert.alert("Error", e.message);
@@ -69,14 +113,30 @@ export default function ResetPasswordScreen() {
     >
       <View style={styles.content}>
         <Text style={styles.title}>Set new password</Text>
-        <Text style={styles.subtitle}>
-          {ready
-            ? "Enter your new password below."
-            : "Verifying your reset link…"}
-        </Text>
 
-        {ready && (
+        {verifying && (
+          <View style={styles.centerRow}>
+            <ActivityIndicator color={Colors.accent} size="small" />
+            <Text style={styles.subtitle}>Verifying your reset link…</Text>
+          </View>
+        )}
+
+        {!verifying && errorMsg.length > 0 && (
+          <View>
+            <Text style={styles.errorText}>{errorMsg}</Text>
+            <TouchableOpacity
+              style={styles.btn}
+              onPress={() => router.replace("/(auth)/forgot-password")}
+            >
+              <Text style={styles.btnText}>Request new reset link</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {!verifying && ready && (
           <>
+            <Text style={styles.subtitle}>Enter your new password below.</Text>
+
             <View style={styles.fieldGroup}>
               <Text style={styles.label}>New password</Text>
               <TextInput
@@ -124,12 +184,24 @@ const styles = StyleSheet.create({
     fontSize: Typography.xxl,
     fontWeight: Typography.bold,
     color: Colors.text,
-    marginBottom: 8,
+    marginBottom: 16,
   },
   subtitle: {
     fontSize: Typography.base,
     color: Colors.muted,
     marginBottom: Spacing.xxxl,
+  },
+  centerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginBottom: Spacing.xl,
+  },
+  errorText: {
+    fontSize: Typography.base,
+    color: Colors.red,
+    marginBottom: Spacing.xl,
+    lineHeight: 22,
   },
   fieldGroup: { marginBottom: Spacing.lg },
   label: {
