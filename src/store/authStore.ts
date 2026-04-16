@@ -1,6 +1,7 @@
 // src/store/authStore.ts
 import { create } from 'zustand';
 import { Session, User } from '@supabase/supabase-js';
+import * as Linking from 'expo-linking';
 import { supabase } from '../services/supabase';
 import { Profile } from '../types/database';
 
@@ -79,8 +80,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   resetPassword: async (email) => {
     set({ loading: true, error: null });
     try {
+      // Build a redirect URL that works on device, simulator and web.
+      // In a standalone build this becomes "expensediarysa://reset-password".
+      // In Expo Go / dev it becomes "exp://<host>/--/reset-password".
+      const redirectTo = Linking.createURL('reset-password');
+
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: 'expensediarysa://reset-password',
+        redirectTo,
       });
       if (error) throw error;
     } catch (e: any) {
