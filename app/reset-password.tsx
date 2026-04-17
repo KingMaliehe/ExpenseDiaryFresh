@@ -1,7 +1,6 @@
 // app/reset-password.tsx
 import { router, useLocalSearchParams } from "expo-router";
-import * as Linking from "expo-linking";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -16,54 +15,6 @@ import {
 import { supabase } from "../src/services/supabase";
 import { Colors, Radius, Spacing, Typography } from "../src/theme";
 
-/**
- * Parses Supabase-style auth redirect URLs and returns relevant tokens.
- *
- * Two shapes are supported:
- *   1. Query-string style (custom template with {{ .TokenHash }}):
- *        myapp://reset-password?token_hash=abc&type=recovery
- *   2. Hash-fragment style (default {{ .ConfirmationURL }} flow):
- *        myapp://reset-password#access_token=...&refresh_token=...&type=recovery
- */
-function parseAuthUrl(url: string | null): {
-  tokenHash?: string;
-  accessToken?: string;
-  refreshToken?: string;
-  code?: string;
-  type?: string;
-} {
-  if (!url) return {};
-  const result: ReturnType<typeof parseAuthUrl> = {};
-
-  // Query-string params
-  try {
-    const parsed = Linking.parse(url);
-    const qp = parsed.queryParams ?? {};
-    if (typeof qp.token_hash === "string") result.tokenHash = qp.token_hash;
-    if (typeof qp.code === "string") result.code = qp.code;
-    if (typeof qp.type === "string") result.type = qp.type;
-  } catch {
-    // ignore
-  }
-
-  // Hash-fragment params (after "#")
-  const hashIndex = url.indexOf("#");
-  if (hashIndex >= 0) {
-    const hash = url.slice(hashIndex + 1);
-    const frag = new URLSearchParams(hash);
-    const at = frag.get("access_token");
-    const rt = frag.get("refresh_token");
-    const ty = frag.get("type");
-    const cd = frag.get("code");
-    if (at) result.accessToken = at;
-    if (rt) result.refreshToken = rt;
-    if (ty) result.type = ty;
-    if (cd) result.code = cd;
-  }
-
-  return result;
-}
-
 export default function ResetPasswordScreen() {
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -71,125 +22,74 @@ export default function ResetPasswordScreen() {
   const [verifying, setVerifying] = useState(true);
   const [ready, setReady] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
-  const [debugUrl, setDebugUrl] = useState<string>("");
-  const readyRef = useRef(false);
 
   const params = useLocalSearchParams();
 
   useEffect(() => {
-    let cancelled = false;
+    verifyToken();
+  }, []);
 
-    const markReady = () => {
-      if (cancelled) return;
-      readyRef.current = true;
-      setReady(true);
-      setVerifying(false);
-    };
+  const verifyToken = async (): Promise<void> => {
+    try {
+      const tokenHash = params.token_hash as string | undefined;
+      const type = params.type as string | undefined;
+      const accessToken = params.access_token as string | undefined;
+      const refreshToken = params.refresh_token as string | undefined;
 
-    const markError = (msg: string) => {
-      if (cancelled) return;
-      setErrorMsg(msg);
-      setVerifying(false);
-    };
-
-    const tryProcess = async (url: string | null): Promise<boolean> => {
-      if (url && !cancelled) setDebugUrl(url);
-      const parsed = parseAuthUrl(url);
-
-      // Also consider params coming in via expo-router
-      const routerTokenHash = params.token_hash as string | undefined;
-      const routerCode = params.code as string | undefined;
-      const routerType = params.type as string | undefined;
-
-      const tokenHash = parsed.tokenHash ?? routerTokenHash;
-      const code = parsed.code ?? routerCode;
-      const type = parsed.type ?? routerType;
-
-      // 1. PKCE flow: exchange ?code=... for a session
-      if (code) {
-        const { error } = await supabase.auth.exchangeCodeForSession(code);
-        if (error) {
-          markError("This reset link has expired or is invalid. Please request a new one.");
-          return true;
-        }
-        markReady();
-        return true;
-      }
-
-      // 2. Hash-fragment (implicit) flow: set the session directly with tokens
-      if (parsed.accessToken && parsed.refreshToken) {
+      if (accessToken && refreshToken) {
         const { error } = await supabase.auth.setSession({
-          access_token: parsed.accessToken,
-          refresh_token: parsed.refreshToken,
+          access_token: accessToken,
+          refresh_token: refreshToken,
         });
         if (error) {
-          markError("This reset link has expired or is invalid. Please request a new one.");
-          return true;
+          setErrorMsg("This reset link has expired. Please request a new one.");
+        } else {
+          setReady(true);
         }
-        markReady();
-        return true;
+        setVerifying(false);
+        return;
       }
 
-      // 3. Token-hash (OTP) flow
-      if (tokenHash && (type === "recovery" || type === undefined)) {
+      if (tokenHash && type) {
         const { error } = await supabase.auth.verifyOtp({
           token_hash: tokenHash,
           type: "recovery",
         });
         if (error) {
-          markError("This reset link has expired or is invalid. Please request a new one.");
-          return true;
+          setErrorMsg("This reset link has expired. Please request a new one.");
+        } else {
+          setReady(true);
         }
-        markReady();
-        return true;
+        setVerifying(false);
+        return;
       }
 
-      return false;
-    };
+      let resolved = false;
+      const {
+        data: { subscription },
+      } = supabase.auth.onAuthStateChange((event) => {
+        if (event === "PASSWORD_RECOVERY") {
+          resolved = true;
+          setReady(true);
+          setVerifying(false);
+          subscription.unsubscribe();
+        }
+      });
 
-    (async () => {
-      // Check the initial URL that launched the app (if any)
-      const initialUrl = await Linking.getInitialURL();
-      const handled = await tryProcess(initialUrl);
-
-      if (!handled) {
-        // Fallback: listen for PASSWORD_RECOVERY auth event
-        // (the supabase client fires this when it auto-detects recovery tokens)
-        const {
-          data: { subscription: authSub },
-        } = supabase.auth.onAuthStateChange((event) => {
-          if (event === "PASSWORD_RECOVERY") {
-            markReady();
-          }
-        });
-
-        // Also listen for further incoming deep links while we're on this screen
-        const linkSub = Linking.addEventListener("url", ({ url }) => {
-          tryProcess(url);
-        });
-
-        // Timeout after 6 seconds if nothing arrives
-        const to = setTimeout(() => {
-          if (!readyRef.current) {
-            markError(
-              "Could not verify reset link. Please request a new password reset.",
-            );
-          }
-        }, 6000);
-
-        return () => {
-          clearTimeout(to);
-          authSub.unsubscribe();
-          linkSub.remove();
-        };
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+      setTimeout(() => {
+        subscription.unsubscribe();
+        if (!resolved) {
+          setErrorMsg(
+            "Could not verify reset link. Please request a new password reset.",
+          );
+          setVerifying(false);
+        }
+      }, 6000);
+    } catch (e: any) {
+      setErrorMsg("Something went wrong. Please try again.");
+      setVerifying(false);
+    }
+  };
 
   const handleReset = async (): Promise<void> => {
     if (!password) {
@@ -227,15 +127,6 @@ export default function ResetPasswordScreen() {
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
       <View style={styles.content}>
-        {debugUrl.length > 0 && (
-          <View style={styles.debugBanner}>
-            <Text style={styles.debugLabel}>Received link:</Text>
-            <Text style={styles.debugText} selectable numberOfLines={6}>
-              {debugUrl}
-            </Text>
-          </View>
-        )}
-
         <Text style={styles.title}>Set new password</Text>
 
         {verifying && (
@@ -248,14 +139,6 @@ export default function ResetPasswordScreen() {
         {!verifying && errorMsg.length > 0 && (
           <View>
             <Text style={styles.errorText}>{errorMsg}</Text>
-            {debugUrl.length > 0 && (
-              <View style={styles.debugBox}>
-                <Text style={styles.debugLabel}>Debug — received URL:</Text>
-                <Text style={styles.debugText} selectable>
-                  {debugUrl}
-                </Text>
-              </View>
-            )}
             <TouchableOpacity
               style={styles.btn}
               onPress={() => router.replace("/(auth)/forgot-password")}
@@ -268,7 +151,6 @@ export default function ResetPasswordScreen() {
         {!verifying && ready && (
           <>
             <Text style={styles.subtitle}>Enter your new password below.</Text>
-
             <View style={styles.fieldGroup}>
               <Text style={styles.label}>New password</Text>
               <TextInput
@@ -280,7 +162,6 @@ export default function ResetPasswordScreen() {
                 secureTextEntry
               />
             </View>
-
             <View style={styles.fieldGroup}>
               <Text style={styles.label}>Confirm password</Text>
               <TextInput
@@ -292,7 +173,6 @@ export default function ResetPasswordScreen() {
                 secureTextEntry
               />
             </View>
-
             <TouchableOpacity
               style={[styles.btn, loading && { opacity: 0.6 }]}
               onPress={handleReset}
@@ -364,33 +244,5 @@ const styles = StyleSheet.create({
     fontSize: Typography.md,
     fontWeight: Typography.semibold,
     color: Colors.bg,
-  },
-  debugBox: {
-    backgroundColor: Colors.surface,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    borderRadius: Radius.sm,
-    padding: Spacing.md,
-    marginBottom: Spacing.xl,
-  },
-  debugBanner: {
-    backgroundColor: Colors.surface,
-    borderWidth: 1,
-    borderColor: Colors.accent,
-    borderRadius: Radius.sm,
-    padding: Spacing.md,
-    marginBottom: Spacing.xl,
-  },
-  debugLabel: {
-    fontSize: Typography.xs,
-    color: Colors.muted,
-    marginBottom: 6,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-  },
-  debugText: {
-    fontSize: 11,
-    color: Colors.subtle,
-    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
   },
 });

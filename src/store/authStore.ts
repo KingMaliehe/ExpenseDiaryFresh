@@ -1,16 +1,15 @@
 // src/store/authStore.ts
-import { create } from 'zustand';
-import { Session, User } from '@supabase/supabase-js';
-import * as Linking from 'expo-linking';
-import { supabase } from '../services/supabase';
-import { Profile } from '../types/database';
+import { Session, User } from "@supabase/supabase-js";
+import { create } from "zustand";
+import { supabase } from "../services/supabase";
+import { Profile } from "../types/database";
 
 interface AuthState {
   session: Session | null;
   user: User | null;
   profile: Profile | null;
-  loading: boolean;       // true while sign-in/sign-up is in progress
-  initializing: boolean;  // true until first session check completes
+  loading: boolean; // true while sign-in/sign-up is in progress
+  initializing: boolean; // true until first session check completes
   error: string | null;
 
   signUp: (email: string, password: string, fullName: string) => Promise<void>;
@@ -60,7 +59,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   signIn: async (email, password) => {
     set({ loading: true, error: null });
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
       if (error) throw error;
       set({ session: data.session, user: data.user });
       await get().loadProfile();
@@ -80,13 +82,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   resetPassword: async (email) => {
     set({ loading: true, error: null });
     try {
-      // Build a redirect URL that works on device, simulator and web.
-      // In a standalone build this becomes "expensediarysa://reset-password".
-      // In Expo Go / dev it becomes "exp://<host>/--/reset-password".
-      const redirectTo = Linking.createURL('reset-password');
-
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo,
+        redirectTo: "expensediarysa://reset-password",
       });
       if (error) throw error;
     } catch (e: any) {
@@ -101,9 +98,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     const user = get().user;
     if (!user) return;
     const { data } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', user.id)
+      .from("profiles")
+      .select("*")
+      .eq("id", user.id)
       .single();
     if (data) set({ profile: data });
   },
@@ -112,9 +109,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     const user = get().user;
     if (!user) return;
     const { data, error } = await supabase
-      .from('profiles')
+      .from("profiles")
       .update({ ...updates, updated_at: new Date().toISOString() })
-      .eq('id', user.id)
+      .eq("id", user.id)
       .select()
       .single();
     if (!error && data) set({ profile: data });
