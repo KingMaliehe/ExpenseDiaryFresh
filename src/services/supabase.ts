@@ -1,8 +1,8 @@
 // src/services/supabase.ts
-import { createClient } from '@supabase/supabase-js';
-import * as SecureStore from 'expo-secure-store';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Database } from '../types/database';
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { createClient } from "@supabase/supabase-js";
+import * as SecureStore from "expo-secure-store";
+import { Database } from "../types/database";
 
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL!;
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!;
@@ -21,7 +21,7 @@ const ExpoSecureStoreAdapter = {
           const chunk = await SecureStore.getItemAsync(`${key}_chunk_${i}`);
           if (chunk) chunks.push(chunk);
         }
-        return chunks.join('');
+        return chunks.join("");
       }
       return await SecureStore.getItemAsync(key);
     } catch {
@@ -70,6 +70,6 @@ export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
     detectSessionInUrl: false,
     // PKCE flow returns tokens as ?code=... query params (not #fragments),
     // which survive Android's Chrome → app intent handoff for deep links.
-    flowType: 'pkce',
+    flowType: "pkce",
   },
 });
