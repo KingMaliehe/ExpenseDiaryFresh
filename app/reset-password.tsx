@@ -227,6 +227,15 @@ export default function ResetPasswordScreen() {
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
       <View style={styles.content}>
+        {debugUrl.length > 0 && (
+          <View style={styles.debugBanner}>
+            <Text style={styles.debugLabel}>Received link:</Text>
+            <Text style={styles.debugText} selectable numberOfLines={6}>
+              {debugUrl}
+            </Text>
+          </View>
+        )}
+
         <Text style={styles.title}>Set new password</Text>
 
         {verifying && (
@@ -360,6 +369,14 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surface,
     borderWidth: 1,
     borderColor: Colors.border,
+    borderRadius: Radius.sm,
+    padding: Spacing.md,
+    marginBottom: Spacing.xl,
+  },
+  debugBanner: {
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.accent,
     borderRadius: Radius.sm,
     padding: Spacing.md,
     marginBottom: Spacing.xl,
