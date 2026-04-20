@@ -179,22 +179,22 @@ export default function ForgotPasswordScreen() {
                 style={[styles.input, styles.otpInput]}
                 value={otp}
                 onChangeText={(v) =>
-                  setOtp(v.replace(/[^0-9]/g, "").slice(0, 6))
+                  setOtp(v.replace(/[^0-9]/g, "").slice(0, 8))
                 }
-                placeholder="000000"
+                placeholder="00000000"
                 placeholderTextColor={Colors.subtle}
                 keyboardType="number-pad"
-                maxLength={6}
+                maxLength={8}
                 autoFocus
               />
             </View>
             <TouchableOpacity
               style={[
                 styles.btn,
-                (loading || otp.length !== 6) && styles.btnDisabled,
+                (loading || otp.length !== 8) && styles.btnDisabled,
               ]}
               onPress={handleVerifyOTP}
-              disabled={loading || otp.length !== 6}
+              disabled={loading || otp.length !== 8}
             >
               <Text style={styles.btnText}>
                 {loading ? "Verifying…" : "Verify code"}
