@@ -46,8 +46,8 @@ export default function ForgotPasswordScreen() {
 
   // Step 2 — verify OTP
   const handleVerifyOTP = async () => {
-    if (otp.length !== 6) {
-      Alert.alert("Error", "Please enter the 6-digit code from your email.");
+    if (otp.length !== 8) {
+      Alert.alert("Error", "Please enter the 8-digit code from your email.");
       return;
     }
     setLoading(true);
@@ -138,7 +138,7 @@ export default function ForgotPasswordScreen() {
           <View style={styles.card}>
             <Text style={styles.title}>Reset password</Text>
             <Text style={styles.subtitle}>
-              Enter your email and we'll send you a 6-digit code.
+              Enter your email and we'll send you a 8-digit code.
             </Text>
             <View style={styles.fieldGroup}>
               <Text style={styles.label}>Email address</Text>
