@@ -2,6 +2,7 @@
 import { router } from "expo-router";
 import React, { useState } from "react";
 import {
+  ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
   Platform,
@@ -25,7 +26,7 @@ export default function ForgotPasswordScreen() {
   const [loading, setLoading] = useState(false);
 
   // Step 1 — send OTP
-  const handleSendOTP = async () => {
+  const handleSendOTP = async (): Promise<void> => {
     if (!email.trim()) {
       Alert.alert("Error", "Please enter your email address.");
       return;
@@ -34,8 +35,10 @@ export default function ForgotPasswordScreen() {
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(
         email.trim().toLowerCase(),
+        { redirectTo: undefined },
       );
       if (error) throw error;
+      setOtp("");
       setStep("otp");
     } catch (e: any) {
       Alert.alert("Error", e.message);
@@ -44,25 +47,49 @@ export default function ForgotPasswordScreen() {
     }
   };
 
-  // Step 2 — verify OTP
-  const handleVerifyOTP = async () => {
-    if (otp.length !== 8) {
-      Alert.alert("Error", "Please enter the 8-digit code from your email.");
+  // Step 2 — verify OTP — tries 'recovery' type first, then 'email' as fallback
+  const handleVerifyOTP = async (): Promise<void> => {
+    const trimmedOtp = otp.trim();
+    if (trimmedOtp.length < 6) {
+      Alert.alert("Error", "Please enter the full code from your email.");
       return;
     }
     setLoading(true);
     try {
-      const { error } = await supabase.auth.verifyOtp({
+      // First try with type 'recovery'
+      const { data, error } = await supabase.auth.verifyOtp({
         email: email.trim().toLowerCase(),
-        token: otp.trim(),
+        token: trimmedOtp,
         type: "recovery",
       });
-      if (error) throw error;
-      setStep("password");
+
+      if (error) {
+        // Fallback: try with type 'email'
+        const { data: data2, error: error2 } = await supabase.auth.verifyOtp({
+          email: email.trim().toLowerCase(),
+          token: trimmedOtp,
+          type: "email",
+        });
+        if (error2) throw error2;
+        if (data2?.session) {
+          setStep("password");
+          return;
+        }
+      }
+
+      if (data?.session) {
+        setStep("password");
+      } else {
+        throw new Error("Could not verify code. Please try again.");
+      }
     } catch (e: any) {
       Alert.alert(
         "Invalid code",
-        "The code is incorrect or has expired. Please try again.",
+        "The code is incorrect or has expired. Please request a new one.",
+        [
+          { text: "Try again", style: "cancel" },
+          { text: "Resend code", onPress: handleSendOTP },
+        ],
       );
     } finally {
       setLoading(false);
@@ -70,26 +97,28 @@ export default function ForgotPasswordScreen() {
   };
 
   // Step 3 — set new password
-  const handleSetPassword = async () => {
+  const handleSetPassword = async (): Promise<void> => {
     if (!password) {
       Alert.alert("Error", "Please enter a new password.");
       return;
     }
-    if (password.length < 8) {
-      Alert.alert("Error", "Password must be at least 8 characters.");
+    if (password.length < 6) {
+      Alert.alert("Error", "Password must be at least 6 characters.");
       return;
     }
     if (password !== confirm) {
       Alert.alert("Error", "Passwords do not match.");
       return;
     }
+
     setLoading(true);
     try {
       const { error } = await supabase.auth.updateUser({ password });
       if (error) throw error;
+      await supabase.auth.signOut();
       Alert.alert(
         "Password updated ✓",
-        "Your password has been changed. Please sign in.",
+        "Your password has been changed. Please sign in with your new password.",
         [{ text: "Sign in", onPress: () => router.replace("/(auth)/login") }],
       );
     } catch (e: any) {
@@ -117,7 +146,7 @@ export default function ForgotPasswordScreen() {
           <Text style={styles.backText}>‹ Back</Text>
         </TouchableOpacity>
 
-        {/* Step indicators */}
+        {/* Step dots */}
         <View style={styles.steps}>
           {(["email", "otp", "password"] as Step[]).map((s, i) => (
             <View
@@ -136,9 +165,10 @@ export default function ForgotPasswordScreen() {
         {/* STEP 1 — Email */}
         {step === "email" && (
           <View style={styles.card}>
+            <Text style={styles.cardIcon}>🔑</Text>
             <Text style={styles.title}>Reset password</Text>
             <Text style={styles.subtitle}>
-              Enter your email and we'll send you a 8-digit code.
+              Enter your email and we'll send you a reset code.
             </Text>
             <View style={styles.fieldGroup}>
               <Text style={styles.label}>Email address</Text>
@@ -158,47 +188,54 @@ export default function ForgotPasswordScreen() {
               onPress={handleSendOTP}
               disabled={loading}
             >
-              <Text style={styles.btnText}>
-                {loading ? "Sending…" : "Send reset code"}
-              </Text>
+              {loading ? (
+                <ActivityIndicator color={Colors.bg} size="small" />
+              ) : (
+                <Text style={styles.btnText}>Send reset code</Text>
+              )}
             </TouchableOpacity>
           </View>
         )}
 
-        {/* STEP 2 — OTP code */}
+        {/* STEP 2 — OTP */}
         {step === "otp" && (
           <View style={styles.card}>
+            <Text style={styles.cardIcon}>📬</Text>
             <Text style={styles.title}>Enter code</Text>
             <Text style={styles.subtitle}>
-              We sent a 6-digit code to{"\n"}
+              We sent a code to{"\n"}
               <Text style={styles.emailHighlight}>{email}</Text>
+              {"\n"}Check your inbox and spam folder.
             </Text>
             <View style={styles.fieldGroup}>
-              <Text style={styles.label}>6-digit code</Text>
+              <Text style={styles.label}>Reset code</Text>
               <TextInput
                 style={[styles.input, styles.otpInput]}
                 value={otp}
-                onChangeText={(v) =>
-                  setOtp(v.replace(/[^0-9]/g, "").slice(0, 8))
-                }
-                placeholder="00000000"
+                onChangeText={(v) => setOtp(v.replace(/[^0-9a-zA-Z]/g, ""))}
+                placeholder="Enter code"
                 placeholderTextColor={Colors.subtle}
-                keyboardType="number-pad"
-                maxLength={8}
+                autoCapitalize="none"
+                autoCorrect={false}
                 autoFocus
               />
+              <Text style={styles.otpHint}>
+                Enter the code exactly as it appears in the email
+              </Text>
             </View>
             <TouchableOpacity
               style={[
                 styles.btn,
-                (loading || otp.length !== 8) && styles.btnDisabled,
+                (loading || otp.length < 6) && styles.btnDisabled,
               ]}
               onPress={handleVerifyOTP}
-              disabled={loading || otp.length !== 8}
+              disabled={loading || otp.length < 6}
             >
-              <Text style={styles.btnText}>
-                {loading ? "Verifying…" : "Verify code"}
-              </Text>
+              {loading ? (
+                <ActivityIndicator color={Colors.bg} size="small" />
+              ) : (
+                <Text style={styles.btnText}>Verify code</Text>
+              )}
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.resendBtn}
@@ -215,6 +252,7 @@ export default function ForgotPasswordScreen() {
         {/* STEP 3 — New password */}
         {step === "password" && (
           <View style={styles.card}>
+            <Text style={styles.cardIcon}>🔒</Text>
             <Text style={styles.title}>New password</Text>
             <Text style={styles.subtitle}>
               Choose a strong password for your account.
@@ -225,7 +263,7 @@ export default function ForgotPasswordScreen() {
                 style={styles.input}
                 value={password}
                 onChangeText={setPassword}
-                placeholder="Min. 8 characters"
+                placeholder="Min. 6 characters"
                 placeholderTextColor={Colors.subtle}
                 secureTextEntry
                 autoFocus
@@ -247,9 +285,11 @@ export default function ForgotPasswordScreen() {
               onPress={handleSetPassword}
               disabled={loading}
             >
-              <Text style={styles.btnText}>
-                {loading ? "Updating…" : "Update password"}
-              </Text>
+              {loading ? (
+                <ActivityIndicator color={Colors.bg} size="small" />
+              ) : (
+                <Text style={styles.btnText}>Update password</Text>
+              )}
             </TouchableOpacity>
           </View>
         )}
@@ -279,9 +319,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.accent,
     width: 24,
   },
-  stepDotDone: {
-    backgroundColor: Colors.green,
-  },
+  stepDotDone: { backgroundColor: Colors.green },
   card: {
     backgroundColor: Colors.surface,
     borderRadius: Radius.lg,
@@ -289,6 +327,7 @@ const styles = StyleSheet.create({
     borderColor: Colors.border,
     padding: Spacing.xl,
   },
+  cardIcon: { fontSize: 36, marginBottom: Spacing.md },
   title: {
     fontSize: Typography.xl,
     fontWeight: Typography.semibold,
@@ -324,12 +363,18 @@ const styles = StyleSheet.create({
     color: Colors.text,
   },
   otpInput: {
-    fontSize: 32,
+    fontSize: 24,
     fontWeight: Typography.bold,
     textAlign: "center",
-    letterSpacing: 12,
+    letterSpacing: 6,
     paddingVertical: Spacing.lg,
     color: Colors.accent,
+  },
+  otpHint: {
+    fontSize: Typography.xs,
+    color: Colors.subtle,
+    textAlign: "center",
+    marginTop: 6,
   },
   btn: {
     backgroundColor: Colors.accent,
@@ -337,6 +382,8 @@ const styles = StyleSheet.create({
     padding: Spacing.lg,
     alignItems: "center",
     marginTop: Spacing.sm,
+    minHeight: 52,
+    justifyContent: "center",
   },
   btnDisabled: { opacity: 0.5 },
   btnText: {
@@ -349,8 +396,5 @@ const styles = StyleSheet.create({
     marginTop: Spacing.lg,
     padding: Spacing.sm,
   },
-  resendText: {
-    fontSize: Typography.sm,
-    color: Colors.muted,
-  },
+  resendText: { fontSize: Typography.sm, color: Colors.muted },
 });
