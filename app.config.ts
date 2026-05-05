@@ -25,6 +25,12 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     package: "com.expensediarysa.app",
   },
   plugins: ["expo-router", "expo-secure-store"],
+  updates: {
+    url: "https://u.expo.dev/2824dab2-30bc-4a90-9c72-b6e60f7b4bf8",
+  },
+  runtimeVersion: {
+    policy: "appVersion",
+  },
   extra: {
     supabaseUrl: process.env.EXPO_PUBLIC_SUPABASE_URL,
     supabaseAnonKey: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY,
