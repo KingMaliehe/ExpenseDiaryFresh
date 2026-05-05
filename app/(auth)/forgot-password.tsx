@@ -35,7 +35,6 @@ export default function ForgotPasswordScreen() {
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(
         email.trim().toLowerCase(),
-        { redirectTo: undefined },
       );
       if (error) throw error;
       setOtp("");
@@ -47,7 +46,7 @@ export default function ForgotPasswordScreen() {
     }
   };
 
-  // Step 2 — verify OTP — tries 'recovery' type first, then 'email' as fallback
+  // Step 2 — verify OTP
   const handleVerifyOTP = async (): Promise<void> => {
     const trimmedOtp = otp.trim();
     if (trimmedOtp.length < 6) {
@@ -56,36 +55,22 @@ export default function ForgotPasswordScreen() {
     }
     setLoading(true);
     try {
-      // First try with type 'recovery'
       const { data, error } = await supabase.auth.verifyOtp({
         email: email.trim().toLowerCase(),
         token: trimmedOtp,
         type: "recovery",
       });
-
-      if (error) {
-        // Fallback: try with type 'email'
-        const { data: data2, error: error2 } = await supabase.auth.verifyOtp({
-          email: email.trim().toLowerCase(),
-          token: trimmedOtp,
-          type: "email",
-        });
-        if (error2) throw error2;
-        if (data2?.session) {
-          setStep("password");
-          return;
-        }
-      }
-
-      if (data?.session) {
-        setStep("password");
-      } else {
+      if (error) throw error;
+      if (!data?.session) {
         throw new Error("Could not verify code. Please try again.");
       }
+      setStep("password");
     } catch (e: any) {
+      console.log("verifyOtp error:", e);
       Alert.alert(
         "Invalid code",
-        "The code is incorrect or has expired. Please request a new one.",
+        e?.message ??
+          "The code is incorrect or has expired. Please request a new one.",
         [
           { text: "Try again", style: "cancel" },
           { text: "Resend code", onPress: handleSendOTP },
@@ -212,9 +197,13 @@ export default function ForgotPasswordScreen() {
               <TextInput
                 style={[styles.input, styles.otpInput]}
                 value={otp}
-                onChangeText={(v) => setOtp(v.replace(/[^0-9a-zA-Z]/g, ""))}
-                placeholder="Enter code"
+                onChangeText={(v) =>
+                  setOtp(v.replace(/\D/g, "").slice(0, 10))
+                }
+                placeholder="12345678"
                 placeholderTextColor={Colors.subtle}
+                keyboardType="number-pad"
+                maxLength={10}
                 autoCapitalize="none"
                 autoCorrect={false}
                 autoFocus
@@ -363,10 +352,10 @@ const styles = StyleSheet.create({
     color: Colors.text,
   },
   otpInput: {
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: Typography.bold,
     textAlign: "center",
-    letterSpacing: 6,
+    letterSpacing: 4,
     paddingVertical: Spacing.lg,
     color: Colors.accent,
   },
