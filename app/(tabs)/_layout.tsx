@@ -1,6 +1,7 @@
 // app/(tabs)/_layout.tsx
 import { Tabs, Redirect } from 'expo-router';
 import { View, Text, StyleSheet } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuthStore } from '../../src/store/authStore';
 import { Colors, Radius } from '../../src/theme';
 
@@ -15,13 +16,20 @@ function TabIcon({ focused, label, emoji }: { focused: boolean; label: string; e
 
 export default function TabLayout() {
   const { session } = useAuthStore();
+  const insets = useSafeAreaInsets();
   if (!session) return <Redirect href="/(auth)/login" />;
 
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarStyle: styles.tabBar,
+        tabBarStyle: [
+          styles.tabBar,
+          {
+            height: 70 + insets.bottom,
+            paddingBottom: insets.bottom + 8,
+          },
+        ],
         tabBarShowLabel: false,
       }}
     >
@@ -68,8 +76,6 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surface,
     borderTopColor: Colors.border,
     borderTopWidth: 1,
-    height: 70,
-    paddingBottom: 8,
     paddingTop: 8,
   },
   tabIcon: { alignItems: 'center', gap: 3 },
