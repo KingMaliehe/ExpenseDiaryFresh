@@ -19,6 +19,11 @@ export default function TabLayout() {
   const insets = useSafeAreaInsets();
   if (!session) return <Redirect href="/(auth)/login" />;
 
+  // Guarantee a minimum bottom inset so labels never get covered by the
+  // Android nav bar / gesture pill even when useSafeAreaInsets() under-reports
+  // on some Samsung / edge-to-edge configurations.
+  const bottomInset = Math.max(insets.bottom, 24);
+
   return (
     <Tabs
       screenOptions={{
@@ -26,8 +31,8 @@ export default function TabLayout() {
         tabBarStyle: [
           styles.tabBar,
           {
-            height: 70 + insets.bottom,
-            paddingBottom: insets.bottom + 8,
+            height: 76 + bottomInset,
+            paddingBottom: bottomInset + 10,
           },
         ],
         tabBarShowLabel: false,
