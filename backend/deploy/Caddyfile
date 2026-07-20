@@ -1,0 +1,4 @@
+# Caddy reverse proxy — automatic Let's Encrypt certificates for $DOMAIN.
+{$DOMAIN} {
+	reverse_proxy api:4000
+}
