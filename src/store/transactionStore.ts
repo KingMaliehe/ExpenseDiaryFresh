@@ -1,22 +1,27 @@
 // src/store/transactionStore.ts
+// Same public surface as before — fetchTransactions/addTransaction/etc — so
+// the dashboard/transactions/add screens don't need changes. Optimistic
+// add/delete preserved.
 import { create } from 'zustand';
-import { supabase } from '../services/supabase';
-import { Transaction } from '../types/database';
 import { format, startOfMonth, endOfMonth } from 'date-fns';
+import { api } from '../services/apiClient';
+import { Transaction } from '../types/database';
+import { useAuthStore } from './authStore';
+import { queueOperation } from '../services/offlineSync';
 
 interface TransactionState {
   transactions: Transaction[];
   loading: boolean;
   error: string | null;
 
-  // Summary derived values
   totalIncome: number;
   totalExpenses: number;
   netSavings: number;
 
-  // Actions
   fetchTransactions: (month?: Date) => Promise<void>;
-  addTransaction: (tx: Omit<Transaction, 'id' | 'user_id' | 'created_at' | 'updated_at' | 'client_id' | 'synced_at'>) => Promise<void>;
+  addTransaction: (
+    tx: Omit<Transaction, 'id' | 'user_id' | 'created_at' | 'updated_at' | 'client_id' | 'synced_at'>,
+  ) => Promise<void>;
   updateTransaction: (id: string, updates: Partial<Transaction>) => Promise<void>;
   deleteTransaction: (id: string) => Promise<void>;
   computeSummary: () => void;
@@ -33,22 +38,10 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
   fetchTransactions: async (month = new Date()) => {
     set({ loading: true, error: null });
     try {
-      const start = format(startOfMonth(month), 'yyyy-MM-dd');
-      const end = format(endOfMonth(month), 'yyyy-MM-dd');
-
-      const { data, error } = await supabase
-        .from('transactions')
-        .select(`
-          *,
-          category:categories(id, name, icon, color)
-        `)
-        .gte('date', start)
-        .lte('date', end)
-        .order('date', { ascending: false })
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-      set({ transactions: data ?? [] });
+      const from = format(startOfMonth(month), 'yyyy-MM-dd');
+      const to = format(endOfMonth(month), 'yyyy-MM-dd');
+      const data = await api.transactions.list({ from, to });
+      set({ transactions: data });
       get().computeSummary();
     } catch (e: any) {
       set({ error: e.message });
@@ -58,80 +51,81 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
   },
 
   addTransaction: async (tx) => {
-    const { data: userData } = await supabase.auth.getUser();
-    if (!userData.user) return;
+    const user = useAuthStore.getState().user;
+    if (!user) return;
 
-    const clientId = `${userData.user.id}-${Date.now()}`;
-    const newTx = {
-      ...tx,
-      user_id: userData.user.id,
+    const clientId = `${user.id}-${Date.now()}`;
+    const payload = {
+      description: tx.description,
+      amount: tx.amount,
+      type: tx.type,
+      date: tx.date,
+      category_id: tx.category_id ?? null,
+      notes: tx.notes ?? null,
+      is_recurring: tx.is_recurring ?? false,
       client_id: clientId,
     };
 
-    // Optimistic insert
+    // Optimistic insert with a temporary row keyed by clientId.
     const tempTx: Transaction = {
-      ...newTx,
       id: clientId,
+      user_id: user.id,
+      category_id: tx.category_id ?? null,
+      description: tx.description,
+      amount: tx.amount,
+      type: tx.type,
+      date: tx.date,
+      notes: tx.notes ?? null,
+      is_recurring: tx.is_recurring ?? false,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
+      client_id: clientId,
       synced_at: null,
-      notes: tx.notes ?? null,
     };
-
-    set((state) => ({
-      transactions: [tempTx, ...state.transactions],
-    }));
+    set((state) => ({ transactions: [tempTx, ...state.transactions] }));
     get().computeSummary();
 
-    // Persist to Supabase
-    const { data, error } = await supabase
-      .from('transactions')
-      .insert(newTx)
-      .select(`*, category:categories(id, name, icon, color)`)
-      .single();
-
-    if (error) {
-      // Rollback on failure
+    try {
+      const real = await api.transactions.create(payload);
       set((state) => ({
-        transactions: state.transactions.filter((t) => t.id !== clientId),
-        error: error.message,
+        transactions: state.transactions.map((t) => (t.id === clientId ? real : t)),
       }));
       get().computeSummary();
-    } else if (data) {
-      // Replace temp with real record
-      set((state) => ({
-        transactions: state.transactions.map((t) => (t.id === clientId ? data : t)),
-      }));
+    } catch (e: any) {
+      // If we appear to be offline, leave the optimistic row in place and
+      // queue the operation for later sync. Otherwise rollback + report.
+      if (isNetworkError(e)) {
+        await queueOperation({ table: 'transactions', operation: 'insert', payload });
+      } else {
+        set((state) => ({
+          transactions: state.transactions.filter((t) => t.id !== clientId),
+          error: e.message,
+        }));
+        get().computeSummary();
+      }
     }
   },
 
   updateTransaction: async (id, updates) => {
-    const { error } = await supabase
-      .from('transactions')
-      .update({ ...updates, updated_at: new Date().toISOString() })
-      .eq('id', id);
-
-    if (!error) {
+    try {
+      const real = await api.transactions.update(id, updates);
       set((state) => ({
-        transactions: state.transactions.map((t) =>
-          t.id === id ? { ...t, ...updates } : t
-        ),
+        transactions: state.transactions.map((t) => (t.id === id ? real : t)),
       }));
       get().computeSummary();
+    } catch (e: any) {
+      set({ error: e.message });
     }
   },
 
   deleteTransaction: async (id) => {
     const prev = get().transactions;
-    // Optimistic delete
-    set((state) => ({
-      transactions: state.transactions.filter((t) => t.id !== id),
-    }));
+    set((state) => ({ transactions: state.transactions.filter((t) => t.id !== id) }));
     get().computeSummary();
-
-    const { error } = await supabase.from('transactions').delete().eq('id', id);
-    if (error) {
-      set({ transactions: prev, error: error.message });
+    try {
+      await api.transactions.remove(id);
+    } catch (e: any) {
+      set({ transactions: prev, error: e.message });
       get().computeSummary();
     }
   },
@@ -140,10 +134,16 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
     const { transactions } = get();
     const totalIncome = transactions
       .filter((t) => t.type === 'income')
-      .reduce((sum, t) => sum + t.amount, 0);
+      .reduce((s, t) => s + t.amount, 0);
     const totalExpenses = transactions
       .filter((t) => t.type === 'expense')
-      .reduce((sum, t) => sum + t.amount, 0);
+      .reduce((s, t) => s + t.amount, 0);
     set({ totalIncome, totalExpenses, netSavings: totalIncome - totalExpenses });
   },
 }));
+
+// Heuristic — fetch throws TypeError on actual network failure. Server-side
+// errors (4xx/5xx) come back as ApiError, which we want to surface.
+function isNetworkError(e: any): boolean {
+  return e?.name === 'TypeError' || /network|fetch/i.test(e?.message ?? '');
+}

@@ -1,5 +1,5 @@
 // src/types/database.ts
-// These mirror your Supabase tables exactly
+// These mirror the backend's Prisma models (backend/prisma/schema.prisma)
 
 export type TransactionType = 'income' | 'expense';
 

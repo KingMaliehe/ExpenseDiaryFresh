@@ -15,7 +15,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { supabase } from "../../src/services/supabase";
+import { api } from "../../src/services/apiClient";
 import { useAuthStore } from "../../src/store/authStore";
 import { useTransactionStore } from "../../src/store/transactionStore";
 import { Colors, Radius, Spacing, Typography } from "../../src/theme";
@@ -40,12 +40,10 @@ export default function AddScreen() {
 
   useEffect(() => {
     if (!user) return;
-    supabase
-      .from("categories")
-      .select("*")
-      .eq("user_id", user.id)
-      .order("name")
-      .then(({ data }) => setCategories(data ?? []));
+    api.categories
+      .list()
+      .then(setCategories)
+      .catch(() => setCategories([]));
   }, [user]);
 
   const filteredCategories = categories.filter((c) =>

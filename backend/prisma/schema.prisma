@@ -1,0 +1,151 @@
+// Prisma schema for Expense Diary SA
+// Translated from supabase/schema.sql — same tables, but now we own the auth layer.
+//
+// After editing: npm run prisma:migrate -- --name <change_name>
+// To regen the typed client: npm run prisma:generate
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// =====================================================================
+// USERS — replaces Supabase's auth.users
+// =====================================================================
+model User {
+  id            String   @id @default(uuid()) @db.Uuid
+  email         String   @unique
+  passwordHash  String   @map("password_hash")
+  emailVerified Boolean  @default(false) @map("email_verified")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  profile       Profile?
+  categories    Category[]
+  transactions  Transaction[]
+  budgets       Budget[]
+  refreshTokens RefreshToken[]
+  otpCodes      OtpCode[]
+
+  @@map("users")
+}
+
+// Refresh tokens are stored hashed so a DB leak doesn't grant access.
+model RefreshToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique @map("token_hash")
+  expiresAt DateTime  @map("expires_at") @db.Timestamptz()
+  revokedAt DateTime? @map("revoked_at") @db.Timestamptz()
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz()
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+// Password-reset OTPs. Code is stored hashed; consumed_at marks single-use.
+model OtpCode {
+  id         String    @id @default(uuid()) @db.Uuid
+  userId     String    @map("user_id") @db.Uuid
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  codeHash   String    @map("code_hash")
+  purpose    String // 'password_reset'
+  expiresAt  DateTime  @map("expires_at") @db.Timestamptz()
+  consumedAt DateTime? @map("consumed_at") @db.Timestamptz()
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz()
+
+  @@index([userId])
+  @@map("otp_codes")
+}
+
+// =====================================================================
+// PROFILES — extends User with display data
+// =====================================================================
+model Profile {
+  id            String   @id @db.Uuid
+  user          User     @relation(fields: [id], references: [id], onDelete: Cascade)
+  fullName      String?  @map("full_name")
+  avatarUrl     String?  @map("avatar_url")
+  currency      String   @default("ZAR")
+  monthlyIncome Decimal  @default(0) @map("monthly_income") @db.Decimal(12, 2)
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  @@map("profiles")
+}
+
+// =====================================================================
+// CATEGORIES — default set is seeded on signup (see services/auth.ts)
+// =====================================================================
+model Category {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String?  @map("user_id") @db.Uuid
+  user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  icon      String   @default("📌")
+  color     String   @default("#8b949e")
+  isDefault Boolean  @default(false) @map("is_default")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  transactions Transaction[]
+  budgets      Budget[]
+
+  @@map("categories")
+}
+
+// =====================================================================
+// TRANSACTIONS — main financial records, includes offline sync fields
+// =====================================================================
+model Transaction {
+  id          String    @id @default(uuid()) @db.Uuid
+  userId      String    @map("user_id") @db.Uuid
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  categoryId  String?   @map("category_id") @db.Uuid
+  category    Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  description String
+  amount      Decimal   @db.Decimal(12, 2)
+  type        TxType
+  date        DateTime  @default(now()) @db.Date
+  notes       String?
+  isRecurring Boolean   @default(false) @map("is_recurring")
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz()
+  // Offline-sync fields: client_id is the local UUID generated on the device,
+  // synced_at marks when it was confirmed on the server.
+  clientId    String?   @unique @map("client_id")
+  syncedAt    DateTime? @map("synced_at") @db.Timestamptz()
+
+  @@index([userId])
+  @@index([date(sort: Desc)])
+  @@index([type])
+  @@map("transactions")
+}
+
+enum TxType {
+  income
+  expense
+}
+
+// =====================================================================
+// BUDGETS — per-category monthly limit
+// =====================================================================
+model Budget {
+  id             String   @id @default(uuid()) @db.Uuid
+  userId         String   @map("user_id") @db.Uuid
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  categoryId     String   @map("category_id") @db.Uuid
+  category       Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  limitAmount    Decimal  @map("limit_amount") @db.Decimal(12, 2)
+  month          Int
+  year           Int
+  alertAtPercent Int      @default(80) @map("alert_at_percent")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  @@unique([userId, categoryId, month, year])
+  @@map("budgets")
+}

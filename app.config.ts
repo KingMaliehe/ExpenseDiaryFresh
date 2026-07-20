@@ -32,8 +32,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     policy: "appVersion",
   },
   extra: {
-    supabaseUrl: process.env.EXPO_PUBLIC_SUPABASE_URL,
-    supabaseAnonKey: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY,
+    apiUrl: process.env.EXPO_PUBLIC_API_URL,
     eas: {
       projectId: "2824dab2-30bc-4a90-9c72-b6e60f7b4bf8",
     },

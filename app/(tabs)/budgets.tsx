@@ -6,7 +6,7 @@ import {
 } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { format } from 'date-fns';
-import { supabase } from '../../src/services/supabase';
+import { api } from '../../src/services/apiClient';
 import { useAuthStore } from '../../src/store/authStore';
 import { Budget, Category } from '../../src/types/database';
 import { Colors, Spacing, Radius, Typography } from '../../src/theme';
@@ -38,45 +38,16 @@ export default function BudgetsScreen() {
     if (!user) return;
     setLoading(true);
     try {
-      // Fetch budgets with category info
-      const { data: budgetData } = await supabase
-        .from('budgets')
-        .select('*, category:categories(*)')
-        .eq('user_id', user.id)
-        .eq('month', month)
-        .eq('year', year);
+      // The backend returns budgets with `spent` already computed and the
+      // joined category attached — no extra roundtrip needed for spending.
+      const budgetData = await api.budgets.list({ month, year });
+      setBudgets(budgetData as BudgetWithSpent[]);
 
-      // Fetch spending per category this month
-      const start = format(new Date(year, month - 1, 1), 'yyyy-MM-dd');
-      const end = format(new Date(year, month, 0), 'yyyy-MM-dd');
-      const { data: txData } = await supabase
-        .from('transactions')
-        .select('category_id, amount')
-        .eq('user_id', user.id)
-        .eq('type', 'expense')
-        .gte('date', start)
-        .lte('date', end);
-
-      // Sum spending per category
-      const spentMap: Record<string, number> = {};
-      (txData ?? []).forEach((tx) => {
-        if (tx.category_id) spentMap[tx.category_id] = (spentMap[tx.category_id] ?? 0) + tx.amount;
-      });
-
-      const enriched = (budgetData ?? []).map((b: any) => ({
-        ...b,
-        spent: spentMap[b.category_id] ?? 0,
-      }));
-      setBudgets(enriched);
-
-      // Fetch categories for the add modal
-      const { data: catData } = await supabase
-        .from('categories')
-        .select('*')
-        .eq('user_id', user.id)
-        .neq('name', 'Income')
-        .order('name');
-      setCategories(catData ?? []);
+      // Categories for the add modal (exclude Income — budgets are for expenses).
+      const catData = await api.categories.list();
+      setCategories(catData.filter((c) => c.name !== 'Income'));
+    } catch (e: any) {
+      Alert.alert('Error', e.message);
     } finally {
       setLoading(false);
     }
@@ -92,14 +63,21 @@ export default function BudgetsScreen() {
     if (!amount || amount <= 0) { Alert.alert('Error', 'Enter a valid amount.'); return; }
     setSaving(true);
     try {
-      await supabase.from('budgets').upsert({
-        user_id: user!.id,
-        category_id: selectedCategory.id,
+      // Upsert: if a budget already exists for this category/month/year, update
+      // it. Otherwise create a new one. The backend rejects duplicate creates
+      // with 409, so we check locally first.
+      const existing = budgets.find((b) => b.category_id === selectedCategory.id);
+      const body = {
         limit_amount: amount,
         month,
         year,
         alert_at_percent: parseInt(alertPercent) || 80,
-      }, { onConflict: 'user_id,category_id,month,year' });
+      };
+      if (existing) {
+        await api.budgets.update(existing.id, body);
+      } else {
+        await api.budgets.create({ ...body, category_id: selectedCategory.id });
+      }
       setModalVisible(false);
       setSelectedCategory(null);
       setLimitAmount('');
@@ -116,8 +94,12 @@ export default function BudgetsScreen() {
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Delete', style: 'destructive', onPress: async () => {
-          await supabase.from('budgets').delete().eq('id', budget.id);
-          await fetchData();
+          try {
+            await api.budgets.remove(budget.id);
+            await fetchData();
+          } catch (e: any) {
+            Alert.alert('Error', e.message);
+          }
         }
       },
     ]);

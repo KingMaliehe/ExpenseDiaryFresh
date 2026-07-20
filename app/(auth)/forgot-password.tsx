@@ -13,7 +13,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { supabase } from "../../src/services/supabase";
+import { api } from "../../src/services/apiClient";
 import { Colors, Radius, Spacing, Typography } from "../../src/theme";
 
 type Step = "email" | "otp" | "password";
@@ -22,6 +22,7 @@ export default function ForgotPasswordScreen() {
   const [step, setStep] = useState<Step>("email");
   const [email, setEmail] = useState("");
   const [otp, setOtp] = useState("");
+  const [resetToken, setResetToken] = useState<string | null>(null);
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [loading, setLoading] = useState(false);
@@ -34,11 +35,9 @@ export default function ForgotPasswordScreen() {
     }
     setLoading(true);
     try {
-      const { error } = await supabase.auth.resetPasswordForEmail(
-        email.trim().toLowerCase(),
-      );
-      if (error) throw error;
+      await api.auth.forgotPassword(email.trim().toLowerCase());
       setOtp("");
+      setResetToken(null);
       setStep("otp");
     } catch (e: any) {
       Alert.alert("Error", e.message);
@@ -47,24 +46,20 @@ export default function ForgotPasswordScreen() {
     }
   };
 
-  // Step 2 — verify OTP
+  // Step 2 — verify OTP (now 8 digits, returns a short-lived resetToken)
   const handleVerifyOTP = async (): Promise<void> => {
     const trimmedOtp = otp.trim();
-    if (trimmedOtp.length < 6) {
-      Alert.alert("Error", "Please enter the full code from your email.");
+    if (trimmedOtp.length < 8) {
+      Alert.alert("Error", "Please enter the full 8-digit code from your email.");
       return;
     }
     setLoading(true);
     try {
-      const { data, error } = await supabase.auth.verifyOtp({
-        email: email.trim().toLowerCase(),
-        token: trimmedOtp,
-        type: "recovery",
-      });
-      if (error) throw error;
-      if (!data?.session) {
-        throw new Error("Could not verify code. Please try again.");
-      }
+      const { resetToken: rt } = await api.auth.verifyOtp(
+        email.trim().toLowerCase(),
+        trimmedOtp,
+      );
+      setResetToken(rt);
       setStep("password");
     } catch (e: any) {
       console.log("verifyOtp error:", e);
@@ -82,8 +77,13 @@ export default function ForgotPasswordScreen() {
     }
   };
 
-  // Step 3 — set new password
+  // Step 3 — set new password (uses the resetToken from step 2)
   const handleSetPassword = async (): Promise<void> => {
+    if (!resetToken) {
+      Alert.alert("Error", "Reset session missing. Please start again.");
+      setStep("email");
+      return;
+    }
     if (!password) {
       Alert.alert("Error", "Please enter a new password.");
       return;
@@ -99,9 +99,7 @@ export default function ForgotPasswordScreen() {
 
     setLoading(true);
     try {
-      const { error } = await supabase.auth.updateUser({ password });
-      if (error) throw error;
-      await supabase.auth.signOut();
+      await api.auth.resetPassword(resetToken, password);
       Alert.alert(
         "Password updated ✓",
         "Your password has been changed. Please sign in with your new password.",
