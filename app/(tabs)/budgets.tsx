@@ -7,11 +7,11 @@ import {
 import { useFocusEffect } from 'expo-router';
 import { format } from 'date-fns';
 import { api } from '../../src/services/apiClient';
+import { confirmAsync } from '../../src/lib/confirm';
 import { useAuthStore } from '../../src/store/authStore';
+import { currencyInfo, formatMoney } from '../../src/lib/currency';
 import { Budget, Category } from '../../src/types/database';
 import { Colors, Spacing, Radius, Typography } from '../../src/theme';
-
-const formatRand = (n: number) => 'R ' + n.toLocaleString('en-ZA', { minimumFractionDigits: 2 });
 
 interface BudgetWithSpent extends Budget {
   spent: number;
@@ -19,7 +19,10 @@ interface BudgetWithSpent extends Budget {
 }
 
 export default function BudgetsScreen() {
-  const { user } = useAuthStore();
+  const { user, profile } = useAuthStore();
+  const currency = profile?.currency;
+  const symbol = currencyInfo(currency).symbol;
+  const formatRand = (n: number) => formatMoney(n, currency);
   const [budgets, setBudgets] = useState<BudgetWithSpent[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
@@ -89,20 +92,20 @@ export default function BudgetsScreen() {
     }
   };
 
-  const handleDeleteBudget = (budget: BudgetWithSpent) => {
-    Alert.alert('Delete budget', `Remove budget for ${budget.category.name}?`, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete', style: 'destructive', onPress: async () => {
-          try {
-            await api.budgets.remove(budget.id);
-            await fetchData();
-          } catch (e: any) {
-            Alert.alert('Error', e.message);
-          }
-        }
-      },
-    ]);
+  const handleDeleteBudget = async (budget: BudgetWithSpent) => {
+    const ok = await confirmAsync(
+      'Delete budget',
+      `Remove budget for ${budget.category.name}?`,
+      'Delete',
+      true,
+    );
+    if (!ok) return;
+    try {
+      await api.budgets.remove(budget.id);
+      await fetchData();
+    } catch (e: any) {
+      Alert.alert('Error', e.message);
+    }
   };
 
   const totalBudget = budgets.reduce((s, b) => s + b.limit_amount, 0);
@@ -175,7 +178,7 @@ export default function BudgetsScreen() {
                 ))}
               </View>
 
-              <Text style={[styles.fieldLabel, { marginTop: Spacing.lg }]}>Monthly limit (R)</Text>
+              <Text style={[styles.fieldLabel, { marginTop: Spacing.lg }]}>Monthly limit ({symbol})</Text>
               <TextInput
                 style={styles.input}
                 value={limitAmount}
@@ -212,6 +215,8 @@ export default function BudgetsScreen() {
 }
 
 function BudgetCard({ budget, onLongPress }: { budget: BudgetWithSpent; onLongPress: () => void }) {
+  const currency = useAuthStore((s) => s.profile?.currency);
+  const m = (n: number) => formatMoney(n, currency, { decimals: false });
   const pct = Math.min(100, (budget.spent / budget.limit_amount) * 100);
   const over = budget.spent > budget.limit_amount;
   const nearLimit = pct >= budget.alert_at_percent && !over;
@@ -228,15 +233,15 @@ function BudgetCard({ budget, onLongPress }: { budget: BudgetWithSpent; onLongPr
           <View>
             <Text style={styles.budgetCatName}>{budget.category.name}</Text>
             <Text style={[styles.budgetStatus, { color: over ? Colors.red : nearLimit ? Colors.orange : Colors.muted }]}>
-              {over ? `Over by R ${(budget.spent - budget.limit_amount).toFixed(0)}` : nearLimit ? 'Approaching limit' : `R ${remaining.toFixed(0)} left`}
+              {over ? `Over by ${m(budget.spent - budget.limit_amount)}` : nearLimit ? 'Approaching limit' : `${m(remaining)} left`}
             </Text>
           </View>
         </View>
         <View style={styles.budgetRight}>
           <Text style={[styles.budgetSpent, { color: over ? Colors.red : Colors.text }]}>
-            R {budget.spent.toFixed(0)}
+            {m(budget.spent)}
           </Text>
-          <Text style={styles.budgetLimit}>/ R {budget.limit_amount.toFixed(0)}</Text>
+          <Text style={styles.budgetLimit}>/ {m(budget.limit_amount)}</Text>
         </View>
       </View>
       <View style={styles.progressTrack}>

@@ -1,12 +1,10 @@
 // app/(tabs)/add.tsx
-import DateTimePicker from "@react-native-community/datetimepicker";
 import { format } from "date-fns";
 import { router } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
 import {
   Alert,
   KeyboardAvoidingView,
-  Modal,
   Platform,
   ScrollView,
   StyleSheet,
@@ -15,14 +13,17 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import DateField from "../../components/DateField";
 import { api } from "../../src/services/apiClient";
+import { currencyInfo } from "../../src/lib/currency";
 import { useAuthStore } from "../../src/store/authStore";
 import { useTransactionStore } from "../../src/store/transactionStore";
 import { Colors, Radius, Spacing, Typography } from "../../src/theme";
 import { Category } from "../../src/types/database";
 
 export default function AddScreen() {
-  const { user } = useAuthStore();
+  const { user, profile } = useAuthStore();
+  const symbol = currencyInfo(profile?.currency).symbol;
   const { addTransaction } = useTransactionStore();
   const scrollRef = useRef<ScrollView>(null);
   const [type, setType] = useState<"expense" | "income">("expense");
@@ -35,8 +36,6 @@ export default function AddScreen() {
   const [notes, setNotes] = useState("");
   const [categories, setCategories] = useState<Category[]>([]);
   const [saving, setSaving] = useState(false);
-  const [showPicker, setShowPicker] = useState(false);
-  const [tempDate, setTempDate] = useState(new Date());
 
   useEffect(() => {
     if (!user) return;
@@ -52,28 +51,7 @@ export default function AddScreen() {
       : c.name !== "Income",
   );
 
-  const formattedDate = format(selectedDate, "dd MMM yyyy");
   const dateForDB = format(selectedDate, "yyyy-MM-dd");
-
-  const openDatePicker = () => {
-    setTempDate(selectedDate);
-    setShowPicker(true);
-  };
-
-  const onDateChange = (event: any, date?: Date) => {
-    if (Platform.OS === "android") {
-      setShowPicker(false);
-      if (event.type === "set" && date) setSelectedDate(date);
-    } else {
-      if (date) setTempDate(date);
-    }
-  };
-
-  const confirmIOSDate = () => {
-    setSelectedDate(tempDate);
-    setShowPicker(false);
-  };
-  const cancelIOSDate = () => setShowPicker(false);
 
   // When notes is focused, scroll down so keyboard doesn't cover it
   const handleNotesFocus = () => {
@@ -175,7 +153,7 @@ export default function AddScreen() {
 
         {/* Amount */}
         <View style={styles.amountCard}>
-          <Text style={styles.amountPrefix}>R</Text>
+          <Text style={styles.amountPrefix}>{symbol}</Text>
           <TextInput
             style={styles.amountInput}
             value={amount}
@@ -231,51 +209,12 @@ export default function AddScreen() {
         {/* Date picker */}
         <View style={styles.fieldGroup}>
           <Text style={styles.label}>Date</Text>
-          <TouchableOpacity style={styles.datePicker} onPress={openDatePicker}>
-            <Text style={styles.dateIcon}>📅</Text>
-            <Text style={styles.dateText}>{formattedDate}</Text>
-            <Text style={styles.dateChevron}>›</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Android native calendar dialog */}
-        {Platform.OS === "android" && showPicker && (
-          <DateTimePicker
+          <DateField
             value={selectedDate}
-            mode="date"
-            display="calendar"
-            onChange={onDateChange}
+            onChange={setSelectedDate}
             maximumDate={new Date()}
           />
-        )}
-
-        {/* iOS bottom sheet date picker */}
-        {Platform.OS === "ios" && (
-          <Modal visible={showPicker} transparent animationType="slide">
-            <View style={styles.modalOverlay}>
-              <View style={styles.modalContent}>
-                <View style={styles.modalHeader}>
-                  <TouchableOpacity onPress={cancelIOSDate}>
-                    <Text style={styles.modalCancel}>Cancel</Text>
-                  </TouchableOpacity>
-                  <Text style={styles.modalTitle}>Select date</Text>
-                  <TouchableOpacity onPress={confirmIOSDate}>
-                    <Text style={styles.modalConfirm}>Done</Text>
-                  </TouchableOpacity>
-                </View>
-                <DateTimePicker
-                  value={tempDate}
-                  mode="date"
-                  display="spinner"
-                  onChange={onDateChange}
-                  maximumDate={new Date()}
-                  textColor={Colors.text}
-                  style={{ backgroundColor: Colors.surface }}
-                />
-              </View>
-            </View>
-          </Modal>
-        )}
+        </View>
 
         {/* Notes — scrolls into view when keyboard opens */}
         <View style={styles.fieldGroup}>
@@ -427,56 +366,6 @@ const styles = StyleSheet.create({
     fontSize: Typography.sm,
     color: Colors.muted,
     fontWeight: Typography.medium,
-  },
-  datePicker: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: Colors.surface,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    borderRadius: Radius.sm,
-    padding: Spacing.md,
-    gap: 10,
-  },
-  dateIcon: { fontSize: 20 },
-  dateText: {
-    flex: 1,
-    fontSize: Typography.md,
-    color: Colors.text,
-    fontWeight: Typography.medium,
-  },
-  dateChevron: { fontSize: 20, color: Colors.muted },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.6)",
-    justifyContent: "flex-end",
-  },
-  modalContent: {
-    backgroundColor: Colors.surface,
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    paddingBottom: 30,
-  },
-  modalHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    padding: Spacing.lg,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
-  },
-  modalTitle: {
-    fontSize: Typography.md,
-    fontWeight: Typography.semibold,
-    color: Colors.text,
-  },
-  modalCancel: { fontSize: Typography.base, color: Colors.muted },
-  modalConfirm: {
-    fontSize: Typography.base,
-    color: Colors.accent,
-    fontWeight: Typography.semibold,
   },
   saveBtn: {
     backgroundColor: Colors.accent,

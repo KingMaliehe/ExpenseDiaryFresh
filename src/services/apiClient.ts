@@ -142,6 +142,7 @@ async function request<T = any>(path: string, opts: RequestOpts = {}): Promise<T
 function friendlyError(code: string, status: number): string {
   switch (code) {
     case 'invalid_credentials': return 'Email or password is incorrect.';
+    case 'same_password':       return 'Your new password must be different from the current one.';
     case 'email_taken':         return 'An account with that email already exists.';
     case 'invalid_code':        return 'The code is incorrect or has expired.';
     case 'invalid_reset_token': return 'Your reset session expired. Please start again.';
@@ -239,6 +240,14 @@ export const api = {
         method: 'POST',
         auth: false,
         body: { resetToken, password },
+      });
+    },
+
+    // Authenticated password change (user knows their current password).
+    async changePassword(currentPassword: string, newPassword: string) {
+      await request('/auth/change-password', {
+        method: 'POST',
+        body: { currentPassword, newPassword },
       });
     },
   },

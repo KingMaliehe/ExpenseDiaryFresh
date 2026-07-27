@@ -8,14 +8,13 @@ import { useFocusEffect } from 'expo-router';
 import { format, subMonths, addMonths } from 'date-fns';
 import { useTransactionStore } from '../../src/store/transactionStore';
 import { useAuthStore } from '../../src/store/authStore';
+import { formatMoney } from '../../src/lib/currency';
 import { Colors, Spacing, Radius, Typography } from '../../src/theme';
 import { Transaction } from '../../src/types/database';
 
-const formatRand = (n: number) =>
-  'R ' + n.toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
 export default function DashboardScreen() {
   const { profile } = useAuthStore();
+  const formatRand = (n: number) => formatMoney(n, profile?.currency);
   const { transactions, totalIncome, totalExpenses, netSavings, loading, fetchTransactions } = useTransactionStore();
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [refreshing, setRefreshing] = useState(false);
@@ -153,6 +152,7 @@ function KPICard({ label, value, color, delta }: { label: string; value: string;
 }
 
 function TxRow({ tx }: { tx: Transaction }) {
+  const currency = useAuthStore((s) => s.profile?.currency);
   const isIncome = tx.type === 'income';
   return (
     <View style={txStyles.row}>
@@ -165,7 +165,7 @@ function TxRow({ tx }: { tx: Transaction }) {
       </View>
       <View style={txStyles.right}>
         <Text style={[txStyles.amount, { color: isIncome ? Colors.green : Colors.text }]}>
-          {isIncome ? '+' : '-'}{formatRand(tx.amount)}
+          {isIncome ? '+' : '-'}{formatMoney(tx.amount, currency)}
         </Text>
         <Text style={txStyles.date}>{tx.date}</Text>
       </View>

@@ -358,6 +358,37 @@ router.post('/reset-password', async (req: Request, res: Response) => {
 });
 
 // =====================================================================
+// POST /auth/change-password   (authenticated — for a logged-in user)
+// Verifies the current password before setting a new one. Distinct from the
+// forgot-password OTP flow, which is for users who can't sign in.
+// =====================================================================
+const changePasswordBody = z.object({
+  currentPassword: z.string().min(1).max(128),
+  newPassword: z.string().min(6).max(128),
+});
+
+router.post('/change-password', requireAuth, async (req: Request, res: Response) => {
+  const parsed = changePasswordBody.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'invalid_body' });
+
+  const user = await prisma.user.findUnique({ where: { id: req.auth!.userId } });
+  if (!user) return res.status(404).json({ error: 'user_not_found' });
+
+  const ok = await verifyPassword(parsed.data.currentPassword, user.passwordHash);
+  if (!ok) return res.status(401).json({ error: 'invalid_credentials' });
+
+  if (parsed.data.newPassword === parsed.data.currentPassword) {
+    return res.status(400).json({ error: 'same_password' });
+  }
+
+  const passwordHash = await hashPassword(parsed.data.newPassword);
+  await prisma.user.update({ where: { id: user.id }, data: { passwordHash } });
+
+  // Keep the current session valid (user stays logged in on this device).
+  res.status(204).end();
+});
+
+// =====================================================================
 // GET /auth/me
 // =====================================================================
 router.get('/me', requireAuth, async (req: Request, res: Response) => {
