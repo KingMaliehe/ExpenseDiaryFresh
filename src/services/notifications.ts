@@ -7,7 +7,9 @@ import { Platform } from 'react-native';
 // Configure how notifications appear when the app is in foreground
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
-    shouldShowAlert: true,
+    // shouldShowAlert was split into banner + list in newer expo-notifications.
+    shouldShowBanner: true,
+    shouldShowList: true,
     shouldPlaySound: true,
     shouldSetBadge: false,
   }),
