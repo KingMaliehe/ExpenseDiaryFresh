@@ -3,6 +3,15 @@ import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
+import { formatMoney } from '../lib/currency';
+import { useAuthStore } from '../store/authStore';
+
+// Format an amount in the user's chosen currency, no decimals (alerts are terse).
+// Read from the store directly so callers don't have to thread currency through.
+function money(n: number): string {
+  const currency = useAuthStore.getState().profile?.currency;
+  return formatMoney(n, currency, { decimals: false });
+}
 
 // Configure how notifications appear when the app is in foreground
 Notifications.setNotificationHandler({
@@ -52,7 +61,7 @@ export async function sendBudgetAlert(categoryName: string, percent: number, spe
   await Notifications.scheduleNotificationAsync({
     content: {
       title: `⚠️ Budget alert: ${categoryName}`,
-      body: `You've used ${percent}% of your ${categoryName} budget (R${spent.toFixed(0)} of R${limit.toFixed(0)}).`,
+      body: `You've used ${percent}% of your ${categoryName} budget (${money(spent)} of ${money(limit)}).`,
       sound: true,
       data: { type: 'budget_alert', category: categoryName },
     },
@@ -64,7 +73,7 @@ export async function sendOverBudgetAlert(categoryName: string, overage: number)
   await Notifications.scheduleNotificationAsync({
     content: {
       title: `🚨 Over budget: ${categoryName}`,
-      body: `You've exceeded your ${categoryName} budget by R${overage.toFixed(0)}.`,
+      body: `You've exceeded your ${categoryName} budget by ${money(overage)}.`,
       sound: true,
       data: { type: 'over_budget', category: categoryName },
     },
